@@ -25,13 +25,14 @@ const { formidable } = require('formidable');  // formidable v3 用 named import
  *   getUploadConfig();
  *   // { uploadDir: '/tmp/uploads', maxFileSize: 10485760, gymName: 'FitClub' }
  */
+//助教建議:getUploadConfig 的 fileSize 可以先給預設值，回傳時再統一換算成 bytes
 function getUploadConfig() {
   // TODO: 實作此函式
   // 提示：用 || 給預設值；MAX_FILE_SIZE_MB 是字串，記得先 Number() 轉型再換算 bytes
-  const fileSize=Number(process.env.MAX_FILE_SIZE_MB)*1024*1024;
+  const fileSize=Number(process.env.MAX_FILE_SIZE_MB) || 5;
   return {
     uploadDir: process.env.UPLOAD_DIR || '/tmp',
-    maxFileSize: fileSize || 5*1024*1024,
+    maxFileSize: fileSize*1024*1024,
     gymName: process.env.GYM_NAME || '未命名健身房'
   };
 }
@@ -54,11 +55,12 @@ function getUploadConfig() {
  *   getFileExtension('PHOTO.JPG');   // '.jpg'
  *   getFileExtension('README');      // ''
  */
+//助教建議:getFileExtension 中使用的 substr 已被標記棄用，未來可能會從引擎中移除，建議改為使用 slice 或 substring 較穩定
 function getFileExtension(filename) {
   // TODO: 實作此函式
   // 提示：用 lastIndexOf('.') 找最後一個 .，toLowerCase() 轉小寫
   const index=filename.lastIndexOf('.');
-  let filenameExten=filename.substr(index).toLowerCase();
+  let filenameExten=filename.slice(index).toLowerCase();
   if(index==-1){
       filenameExten="";
     };
@@ -145,18 +147,9 @@ function formatUploadLog(meta, config) {
  *   // 在 createUploadServer 裡：
  *   http.createServer((req, res) => router(req, res, config))
  */
-function router(req, res, config) {
-  // TODO: 實作此函式
-  // 建議（非強制）：
-  //   - 拆出 handleUpload(req, res, config)：formidable 解析邏輯
-  //   - 拆出 handleNotFound(req, res)：404 邏輯
-  //   - router 只看 method + url、呼叫對應 handler
-  // formidable 錯誤處理要點：
-  //   - 超過 maxFileSize 時 formidable v3 發 'error' event，要用 form.on('error', ...) 接
-  //   - 同時 form.parse 的 callback err 也要處理
-  //   - 避免重複 res.writeHead（檢查 res.headersSent）
-  if(req.method === 'POST' && req.url === '/coaches/avatar'){
-    const form = formidable({
+//助教建議:router 可以嘗試拆分函式 handleUpload 和 handleNotFound 會更好閱讀唷
+function handleUpload(req, res, config){
+  const form = formidable({
       uploadDir: config.uploadDir,        
       maxFileSize: config.maxFileSize,    
       keepExtensions: true,               
@@ -198,12 +191,29 @@ function router(req, res, config) {
         savedPath: file.filepath
       }));
     });
-  }else{
-    //4) 其他 method / 路徑一律 404，不會白白啟動 formidable
+};
+function handleNotFound(req, res){
+  //4) 其他 method / 路徑一律 404，不會白白啟動 formidable
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not Found' }));
+};
+function router(req, res, config) {
+  // TODO: 實作此函式
+  // 建議（非強制）：
+  //   - 拆出 handleUpload(req, res, config)：formidable 解析邏輯
+  //   - 拆出 handleNotFound(req, res)：404 邏輯
+  //   - router 只看 method + url、呼叫對應 handler
+  // formidable 錯誤處理要點：
+  //   - 錯誤解析（例如：maxFileSize）會進到 form.parse 的 callback err，因此錯誤回應（res）可撰寫在這個 callback
+  //   - form.on('error', ...) 不需再處理 res 相關，避免產生回應兩次的錯誤。這個部分可用來紀錄 log、清理暫存檔、額外監控等等。目前可先有此概念即可，或者初步撰寫如下：
+  //     form.on('error', (err) => {
+  //       console.log(err); // 記錄 log、清理暫存檔、額外監控可以寫在這邊
+  //     });  
+  if(req.method === 'POST' && req.url === '/coaches/avatar'){
+    handleUpload(req, res, config);
+    return;
   };
-  
+  handleNotFound(req, res);
 }
 
 // ========== 任務六：建立上傳 server ==========
@@ -222,10 +232,13 @@ function router(req, res, config) {
  *   const server = createUploadServer({ uploadDir: '/tmp', maxFileSize: 5 * 1024 * 1024 });
  *   server.listen(3000);  // ← 這行由 app.js 呼叫
  */
+//助教建議:createUploadServer 的 fs.mkdirSync 這段是為了避免上傳路徑不存在而導致錯誤，不用檢查 config.uploadDir 且本身有預設值，這樣反而會無法建立資料夾
+//相關網址:https://ithelp.ithome.com.tw/m/articles/10358188、https://medium.com/@ele444111/const-fs-require-fs-const-path-require-path-77377d4975eb
+//https://www.geeksforgeeks.org/node-js/node-js-fs-existssync-method/
 function createUploadServer(config) {
   // TODO: 實作此函式
   // 提示：主邏輯都在 router 裡，這邊函式內容不多
-  if(!config.uploadDir){
+  if(!fs.existsSync(config.uploadDir)){
     fs.mkdirSync(config.uploadDir, { recursive: true }); 
   };
   const server = http.createServer((req, res) => router(req, res, config));
