@@ -154,21 +154,21 @@ function handleUpload(req, res, config){
       maxFileSize: config.maxFileSize,    
       keepExtensions: true,               
     });
-    form.on('error', (err) => {
-      console.error('偵測到上傳錯誤:', err.message);
+    // form.on('error', (err) => {
+    //   console.error('偵測到上傳錯誤:', err.message);
       
-      // 如果尚未回應前端，則回傳 500
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: `上傳失敗: ${err.message}` }));
-      }
-    });
+    //   // 如果尚未回應前端，則回傳 500
+    //   if (!res.headersSent) {
+    //     res.writeHead(500, { 'Content-Type': 'application/json' });
+    //     res.end(JSON.stringify({ error: `上傳失敗: ${err.message}` }));
+    //   }
+    // });
 
     form.parse(req, (err, fields, files) => {
       // 1) 解析過程出錯（例如檔案超過大小限制）→ 500
       if (err) {
-        // res.writeHead(500, { 'Content-Type': 'application/json' });
-        // res.end(JSON.stringify({ error: err.message }));
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
         return; 
       }
 
@@ -182,16 +182,17 @@ function handleUpload(req, res, config){
 
       // 3) 成功 → 回傳檔案 metadata →200
       res.writeHead(200, { 'Content-Type': 'application/json' });
+//助教建議:handleUpload 的回傳值 sizeKB 目前是 bytes 不是 kb，這裡建議使用 parseFileMetadata 完成
       const fileMetadata=parseFileMetadata(file);
-      const ext=fileMetadata.ext;
       res.end(JSON.stringify({
-        filename: file.originalFilename, 
-        sizeKB: file.size,   
-        ext:ext,             
+        filename: fileMetadata.filename, 
+        sizeKB: fileMetadata.sizeKB,   
+        ext:fileMetadata.ext,             
         savedPath: file.filepath
       }));
     });
 };
+
 function handleNotFound(req, res){
   //4) 其他 method / 路徑一律 404，不會白白啟動 formidable
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -238,9 +239,11 @@ function router(req, res, config) {
 function createUploadServer(config) {
   // TODO: 實作此函式
   // 提示：主邏輯都在 router 裡，這邊函式內容不多
+/*助教建議:createUploadServer 的 if 檢查可以省略不寫，fs.mkdirSync 有設定 { recursive: true } 當路徑已存在時不會報錯
   if(!fs.existsSync(config.uploadDir)){
     fs.mkdirSync(config.uploadDir, { recursive: true }); 
   };
+  */
   const server = http.createServer((req, res) => router(req, res, config));
   return server;
   
